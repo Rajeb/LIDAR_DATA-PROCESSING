@@ -1,0 +1,50 @@
+
+### Creating square around points
+def sq_buffer(x,y,sq_len):
+    if type(x) == float:
+        xl = x-sq_len/2
+        xu = x+sq_len/2
+        yl = y-sq_len/2
+        yu = y+sq_len/2
+        res = (xl,xu,yl,yu)
+    else:
+        res = []
+        for a,b in zip(x,y):
+            xl = a-sq_len/2
+            xu = a+sq_len/2
+            yl = b-sq_len/2
+            yu = b+sq_len/2            
+            res.append((xl,xu,yl,yu))
+    return res
+
+
+def extract_shape_cp(pointcloud, x, y ,sq_len, geom_buff = 'Circle', buff_radius = 10 , crs = "EPSG:6418"):
+    '''
+    buff_radius in feet !!! (since point clouds are in feet)
+    '''
+    
+    
+    #Extracting square shape from point cloud 
+    (xl,xu,yl,yu) = sq_buffer(x,y,sq_len)
+    mask_x = (pointcloud[:,0] > xl) & (pointcloud[:,0] < xu)
+    mask_y = (pointcloud[:,1] > yl) & (pointcloud[:,1] < yu)
+    sub_ix = np.where(mask_x & mask_y)
+    sub_sq = pointcloud[sub_ix,:]
+    sub_sq = np.squeeze(sub_sq)
+    
+    #Extracting given shape (geom_buff) from square shape
+    gdf_sub = pd.DataFrame({'x':sub_sq[:,0],'y':sub_sq[:,1],'ix':sub_ix[0]})
+    gdf_sub = gpd.GeoDataFrame(gdf_sub, geometry=gpd.points_from_xy(gdf_sub.x, gdf_sub.y), crs=crs)
+    
+    if geom_buff == 'Circle':
+        circle_buff = gdf_sub.geometry.buffer(buff_radius)
+        mask = gdf_sub.geometry.within(circle_buff)
+        sub_shape = pointcloud[gdf_sub.ix[mask],:]
+    else:
+        if type(geom_buff) == str:
+            geom_buff = shapely.wkt.loads(geom_buff)
+        
+        mask = gdf_sub.geometry.within(geom_buff)
+        sub_shape = pointcloud[gdf_sub.ix[mask],:]
+    
+    return sub_shape
