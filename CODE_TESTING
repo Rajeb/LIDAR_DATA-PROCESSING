@@ -205,3 +205,100 @@ else:
 
     # Extract and plot the points within the buffer
     extract_and_plot_with_plotly(laz_file, buffer)
+
+
+
+################################
+Spatial indexing method
+
+import laspy
+import geopandas as gpd
+from shapely.geometry import Point, box
+from rtree import index
+import plotly.graph_objects as go
+
+# Load result dataframe containing structure and .laz file associations
+structure_id = "A"  # Example for Structure A
+structure_row = result_df[result_df["structure_id"] == structure_id].iloc[0]
+
+# Extract Structure A location (latitude and longitude)
+structure_lat = structure_row["latitude"]
+structure_lon = structure_row["longitude"]
+
+# Build buffer around Structure A (10 meters)
+structure_point = Point(structure_lon, structure_lat)
+buffer = structure_point.buffer(10)
+
+# Get the associated .laz file
+laz_file = structure_row["file"]
+
+# Download the .laz file locally
+local_path = f"/tmp/{laz_file.split('/')[-1]}"
+s3.download_file(bucket_name, laz_file, local_path)
+
+# Function to build R-tree spatial index
+def build_spatial_index(x, y):
+    spatial_idx = index.Index()
+    for idx, (xi, yi) in enumerate(zip(x, y)):
+        spatial_idx.insert(idx, (xi, yi, xi, yi))
+    return spatial_idx
+
+# Process .laz file
+def filter_laz_points_within_buffer(local_path, buffer):
+    with laspy.open(local_path) as las:
+        # Read coordinates
+        x, y, z = las.x, las.y, las.z
+
+        # Build spatial index for fast filtering
+        spatial_idx = build_spatial_index(x, y)
+
+        # Get bounding box of the buffer
+        buffer_bounds = buffer.bounds  # (min_x, min_y, max_x, max_y)
+
+        # Find candidate points using bounding box
+        candidate_indices = list(spatial_idx.intersection(buffer_bounds))
+
+        # Filter candidates to points inside the actual buffer
+        filtered_points = [
+            (x[i], y[i], z[i])
+            for i in candidate_indices
+            if buffer.contains(Point(x[i], y[i]))
+        ]
+
+        return filtered_points
+
+# Filter points within the buffer
+filtered_points = filter_laz_points_within_buffer(local_path, buffer)
+
+# Extract filtered points for visualization
+x_f, y_f, z_f = zip(*filtered_points)
+
+# Plot using Plotly
+fig = go.Figure()
+
+# Add 3D scatter plot
+fig.add_trace(
+    go.Scatter3d(
+        x=x_f, y=y_f, z=z_f,
+        mode='markers',
+        marker=dict(
+            size=2,
+            color=z_f,
+            colorscale='Viridis',
+            opacity=0.8
+        )
+    )
+)
+
+# Configure layout
+fig.update_layout(
+    scene=dict(
+        xaxis_title="Longitude",
+        yaxis_title="Latitude",
+        zaxis_title="Elevation (m)"
+    ),
+    title=f"Point Cloud Around Structure {structure_id} (10m Buffer)"
+)
+
+# Show the plot
+fig.show()
