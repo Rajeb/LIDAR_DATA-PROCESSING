@@ -114,3 +114,56 @@ result = gpd.sjoin(gdf_structure, gdf_laz, how='inner', predicate='within')
 # Debugging: Check results
 print(f"Number of matching geometries: {len(result)}")
 print(result)
+
+
+
+
+
+
+
+########################################
+Extracting for a structure
+
+import laspy
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+# Specify the structure number
+structure_no = "A"
+
+# Filter the result DataFrame for the specific structure
+filtered_result = result[result['structure_no'] == structure_no]
+
+if filtered_result.empty:
+    print(f"No associated .laz file found for structure {structure_no}")
+else:
+    # Extract the .laz file associated with the structure
+    laz_file = filtered_result['file'].iloc[0]  # Assuming one file per structure
+
+    print(f"Processing .laz file: {laz_file} for structure {structure_no}")
+    
+    # Function to plot the point cloud
+    def plot_point_cloud(laz_file):
+        # Download the .laz file from S3
+        local_path = f"/tmp/{laz_file.split('/')[-1]}"
+        s3.download_file(bucket_name, laz_file, local_path)
+        
+        # Read the .laz file
+        with laspy.open(local_path) as las:
+            points = las.read()
+            x, y, z = points.x, points.y, points.z  # Extract coordinates
+        
+        # Plot the point cloud
+        fig = plt.figure(figsize=(12, 8))
+        ax = fig.add_subplot(111, projection='3d')
+        ax.scatter(x, y, z, c=z, cmap='viridis', s=0.1)
+        ax.set_title(f"Point Cloud: {laz_file} for Structure {structure_no}")
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+        plt.show()
+    
+    # Plot the point cloud for the selected file
+    plot_point_cloud(laz_file)
+
