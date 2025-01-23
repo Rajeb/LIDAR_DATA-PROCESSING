@@ -50,67 +50,67 @@ def extract_shape_cp(pointcloud, x, y ,sq_len, geom_buff = 'Circle', buff_radius
     return sub_shape
 ###########
 
-# list all .laz files in the bucket
-response = s3.list_objects_v2(Bucket=bucket_name, Prefix=file_path)
-laz_files = [content['Key'] for content in response.get('Contents',[]) if content['Key'].endswith('.laz')]
-selected_files =(laz_files[0:50])
+import boto3
+import laspy
+import geopandas as gpd
+from shapely.geometry import box
+from pyproj import Transformer
+import pandas as pd
 
-## extract bounding box of .lazfile
-def get_laz_bounds(file_path, target_crs ="EPSG: 4326"):
+# S3 client setup
+s3 = boto3.client('s3')
+
+# List .laz files in the bucket
+response = s3.list_objects_v2(Bucket=bucket_name, Prefix=file_path)
+laz_files = [content['Key'] for content in response.get('Contents', []) if content['Key'].endswith('.laz')]
+selected_files = laz_files[:50]  # Select first 50 files
+
+# Function to extract bounding box from .laz files
+def get_laz_bounds(file_path, target_crs="EPSG:4326"):
     with laspy.open(file_path) as las:
         header = las.header
         xmin, ymin, zmin = header.mins
         xmax, ymax, zmax = header.maxs
-        source_crs= " EPSG: 6416"
+        
+        # Transform coordinates to target CRS
+        source_crs = "EPSG:6416"
         transformer = Transformer.from_crs(source_crs, target_crs, always_xy=True)
-        (xmin, ymin) = transformer.transform(xmin,ymin)
-        (xmax, ymax) = transformer.transform(xmax,ymax)
-        return {
-            'xmin': header.mins[0],
-            'xmax':header.max[0],
-            'ymin':header.mins[1],
-            'ymax':header.maxs[1]
-        }
+        xmin, ymin = transformer.transform(xmin, ymin)
+        xmax, ymax = transformer.transform(xmax, ymax)
+        
+        return {'xmin': xmin, 'xmax': xmax, 'ymin': ymin, 'ymax': ymax}
 
+# Extract bounding boxes for selected .laz files
 laz_bounds = {}
 for laz_file in selected_files:
-    # print(laz_file)laz
-    local_path =f"/tmp/{laz_file.split('/')[-1]}"
-    # print(local_path)
-    las = laspy.read(local_path)
-#     crs_info = las.header.vlrs.get("WktCoordinateSystemVlr")
-    
-#     if crs_info:
-#         print("CRS (WKT):", crs.info.string)
-#     else: 
-#         print("NO")
+    local_path = f"/tmp/{laz_file.split('/')[-1]}"
     s3.download_file(bucket_name, laz_file, local_path)
-    laz_bounds[laz_file] =get_laz_bounds(local_path)
-    # laz_data.append({'geometry':laz_bounds, "file": laz_file})
-    laz_gdf = gpd.GeoDataFrame(laz_data)
-    # print(laz_bounds)
+    laz_bounds[laz_file] = get_laz_bounds(local_path)
 
-clean_structure = pd.read_csv(r"/data/transmission/WTRM/asset_structure/clean_structure.csv", low_memory=False)
-gdf_structure = gpd.GeoDataFrame(clean_structure, geometry=gpd.points_from_xy(clean_structure["longitude"], 
-                                                                              clean_structure["latitude"]),
-                                                                                crs="EPSG:4326"
-                                )
-print(f"CRS of the shapefile: {gdf_structure.crs}")    
-
-
-laz_df = pd.DataFrame(laz_bounds).T.reset_index()
-laz_df.columns=['file', 'xmin', 'xmax', 'ymin', 'ymax']
+# Convert bounding boxes to GeoDataFrame
+laz_df = pd.DataFrame.from_dict(laz_bounds, orient='index').reset_index()
+laz_df.columns = ['file', 'xmin', 'xmax', 'ymin', 'ymax']
 gdf_laz = gpd.GeoDataFrame(
-    laz_df, geometry =[box(row['xmin'], row['ymin'],row['xmax'],row['ymax']) for _, row in laz_df.iterrows()],
+    laz_df,
+    geometry=[box(row['xmin'], row['ymin'], row['xmax'], row['ymax']) for _, row in laz_df.iterrows()],
     crs="EPSG:4326"
-       
 )
 
-result = gpd.sjoin(gdf_structure, gdf_laz, how ='inner', predicate = "within")
+# Load structure data
+clean_structure = pd.read_csv(r"/data/transmission/WTRM/asset_structure/clean_structure.csv", low_memory=False)
+gdf_structure = gpd.GeoDataFrame(
+    clean_structure,
+    geometry=gpd.points_from_xy(clean_structure["longitude"], clean_structure["latitude"]),
+    crs="EPSG:4326"
+)
 
+# Debug: Print CRS and sample data
+print(f"CRS of structure GeoDataFrame: {gdf_structure.crs}")
+print(f"CRS of LAZ GeoDataFrame: {gdf_laz.crs}")
 
+# Perform spatial join
+result = gpd.sjoin(gdf_structure, gdf_laz, how='inner', predicate='within')
 
-
-
-
-
+# Debugging: Check results
+print(f"Number of matching geometries: {len(result)}")
+print(result)
