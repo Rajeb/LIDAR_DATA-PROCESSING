@@ -302,3 +302,34 @@ fig.update_layout(
 
 # Show the plot
 fig.show()
+
+
+
+
+____________________ removing outliers---------------
+%%time
+def frange(start, stop, step):
+  i = start
+  while i < stop:
+    yield i
+    i += step
+#ground points grid filter
+n = 80 #grid step
+dataset_Z_filtered = dataset[[0]]
+zfiltered = (dataset[:, 2].max()- dataset[:, 2].min())/120 #setting height filtered from ground
+print('zfiltered =', zfiltered)
+xstep = (dataset[:, 0].max() - dataset[:, 0].min())/n
+ystep = (dataset[:, 1].max() - dataset[:, 1].min())/n
+for x in frange (dataset[:, 0].min(), dataset[:, 0].max(), xstep):
+    for y in frange (dataset[:, 1].min(), dataset[:, 1].max(), ystep):
+        datasetfiltered = dataset[(dataset[:,0] > x)
+                             &(dataset[:, 0] < x+xstep)
+                             &(dataset[:, 1] > y)
+                             &(dataset[:, 1] < y+ystep)]
+        if datasetfiltered.shape[0] > 0:
+              datasetfiltered = datasetfiltered[datasetfiltered[:, 2]
+                        >(datasetfiltered[:, 2].min()+ zfiltered)]
+              if datasetfiltered.shape[0] > 0:
+                    dataset_Z_filtered = np.concatenate((dataset_Z_filtered,
+                                             datasetfiltered))
+print("dataset_Z_filtered shape", dataset_Z_filtered.shape)
