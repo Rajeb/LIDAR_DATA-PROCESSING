@@ -24,3 +24,53 @@ for x in frange (dataset[:, 0].min(), dataset[:, 0].max(), xstep):
         dataset_Z_filtered = np.concatenate((dataset_Z_filtered,
                                              datasetfiltered))
 print(‘dataset_Z_filtered shape’, dataset_Z_filtered.shape)
+--------------------
+alternative
+import numpy as np
+
+# Function for ground points grid filtering
+def ground_points_filter(dataset, n=100, h=10):
+    # Calculate step sizes for grid and height filter
+    xstep = (dataset[:, 0].max() - dataset[:, 0].min()) / n
+    ystep = (dataset[:, 1].max() - dataset[:, 1].min()) / n
+    zfiltered = (dataset[:, 2].max() - dataset[:, 2].min()) / h
+
+    print('zfiltered =', zfiltered)
+
+    # Preallocate dataset_Z_filtered (we’ll resize it later)
+    max_size = dataset.shape[0]
+    dataset_Z_filtered = []
+
+    # Efficient grid-based filtering
+    for x in np.arange(dataset[:, 0].min(), dataset[:, 0].max(), xstep):
+        for y in np.arange(dataset[:, 1].min(), dataset[:, 1].max(), ystep):
+            # Use boolean indexing to filter dataset based on x, y ranges
+            x_condition = (dataset[:, 0] > x) & (dataset[:, 0] < x + xstep)
+            y_condition = (dataset[:, 1] > y) & (dataset[:, 1] < y + ystep)
+            
+            # Apply both conditions and then apply the z-filter
+            datasetfiltered = dataset[x_condition & y_condition]
+            
+            if datasetfiltered.shape[0] > 0:
+                # Apply z-filter condition
+                z_condition = datasetfiltered[:, 2] > (datasetfiltered[:, 2].min() + zfiltered)
+                datasetfiltered = datasetfiltered[z_condition]
+                
+                if datasetfiltered.shape[0] > 0:
+                    # Append filtered data points to the result list
+                    dataset_Z_filtered.append(datasetfiltered)
+    
+    # Concatenate all filtered datasets in one go, only if there are valid points
+    if dataset_Z_filtered:
+        dataset_Z_filtered = np.vstack(dataset_Z_filtered)
+    else:
+        dataset_Z_filtered = np.empty((0, dataset.shape[1]))  # Empty array if no valid points
+    
+    print('dataset_Z_filtered shape', dataset_Z_filtered.shape)
+    return dataset_Z_filtered
+
+# Assuming dataset is your input array (replace with actual dataset)
+dataset = np.random.rand(1000, 3)  # Example dataset with shape (1000, 3)
+
+# Call the function with the desired n and h values
+filtered_data = ground_points_filter(dataset, n=100, h=10)
